@@ -45,27 +45,26 @@ RUN rpm -Uvh http://rpms.remirepo.net/enterprise/remi-release-7.rpm
 # there without needing to look on the console.
 #output: {all: '| tee -a /var/log/cloud-init-output.log'}
 #
-#[Install Web App node Nginx+php-fpm 7.x]
+
 RUN yum install nginx -y
-#RUN yum install subversion -y
 RUN yum install memcached -y
 RUN yum install supervisor -y
-#
-#php72-php-mbstring php72-php-pecl-mcrypt php72-php-gd php72-php-xml php72-php-opcache php72-php-soap
+
 RUN yum install php72 php72-php-fpm php72-php-pecl-memcached php72-php-gd php72-php-mbstring php72-php-mysqlnd php72-php-opcache php72-php-pdo-dblib php72-php-pecl-mcrypt php72-php-soap php72-php-xml -y
-#RUN yum install memcached php72-php-pecl-memcached -y
+
 RUN cd /tmp
 RUN curl -O https://elasticache-downloads.s3.amazonaws.com/ClusterClient/PHP-7.2/latest-64bit
 RUN mv latest-64bit latest-64bit.tgz
-#RUN mkdir -p /opt/remi/php72/root/usr/lib64/php/modules/
+
 RUN tar -zxvf latest-64bit.tgz
 RUN mv amazon-elasticache-cluster-client.so /opt/remi/php72/root/usr/lib64/php/modules/
-#RUN echo "extension=/opt/remi/php72/root/usr/lib64/php/modules/amazon-elasticache-cluster-client.so" | tee --append /etc/opt/remi/php72/php.d/50-memcached.ini
-# sed
 ADD conf/supervisord.conf /etc/supervisord.conf
 
 RUN sed -i \
-        "s/extension=memcached.so/extension=\/opt\/remi\/php72\/root\/usr\/lib64\/php\/modules\/amazon-elasticache-cluster-client.so/g" \
+        -e "s/extension=memcached.so/extension=\/opt\/remi\/php72\/root\/usr\/lib64\/php\/modules\/amazon-elasticache-cluster-client.so/g" \
+        -e "s/;memcached.sess_lock_wait_min = 150/memcached.sess_lock_wait_min = 1000/g" \
+        -e "s/;memcached.sess_lock_wait_max = 150/memcached.sess_lock_wait_max = 2000/g" \
+        -e "s/;memcached.sess_lock_retries = 200/memcached.sess_lock_retries = 5/g" \
     /etc/opt/remi/php72/php.d/50-memcached.ini
 RUN sed -i \
         -e "s/;catch_workers_output\s*=\s*yes/catch_workers_output = yes/g" \
@@ -76,6 +75,8 @@ RUN sed -i \
         -e "s/;listen.group = nobody/listen.group = nginx/g" \
         -e "s/listen = 127.0.0.1:9000/listen = \/var\/run\/php-fpm.sock/g" \
         -e "s/^;clear_env = no$/clear_env = no/" \
+        -e "s/= files/= memcached/g" \
+        -e "s/= \/var\/opt\/remi\/php72\/lib\/php\/session/= 172.17.0.3:11211/g" \
     /etc/opt/remi/php72/php-fpm.d/www.conf
 
 
@@ -90,7 +91,6 @@ RUN mkdir -p /etc/nginx/sites-available/ && \
     rm -Rf /var/www/* && \
     mkdir -p /var/www/html/
 ADD conf/nginx-site.conf /etc/nginx/sites-available/default.conf
-#ADD conf/nginx-site-ssl.conf /etc/nginx/sites-available/default-ssl.conf
 RUN ln -s /etc/nginx/sites-available/default.conf /etc/nginx/sites-enabled/default.conf
 
 ADD scripts/start.sh /start.sh
@@ -102,9 +102,9 @@ RUN chmod 755 /start.sh
 ADD src/ /var/www/html/
 ADD errors/ /var/www/errors
 
-#RUN cp /var/www/html/index.php /usr/share/nginx/html/php.php
+# add telnet - so we can test memcached, see README.md
+RUN yum install telnet -y
 
 EXPOSE 80
 
 CMD ["/start.sh"]
-#CMD ["/usr/sbin/init"]
